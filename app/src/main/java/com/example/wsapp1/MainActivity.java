@@ -1,15 +1,19 @@
 package com.example.wsapp1;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.Color;
 import android.graphics.drawable.BitmapDrawable;
+import android.media.MediaPlayer;
 import android.media.MediaRecorder;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.MotionEvent;
@@ -33,23 +37,36 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.afollestad.materialdialogs.MaterialDialog;
 import com.example.wsapp1.model.DataModel;
+import com.example.wsapp1.model.DataX;
+import com.example.wsapp1.model.GetToken;
 import com.google.android.material.navigation.NavigationView;
+import com.google.gson.Gson;
 
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import butterknife.BindView;
 import butterknife.ButterKnife;
 import butterknife.OnClick;
 import butterknife.OnLongClick;
-
+import io.reactivex.Observable;
+import io.reactivex.Scheduler;
+import io.reactivex.android.schedulers.AndroidSchedulers;
+import io.reactivex.disposables.Disposable;
+import io.reactivex.schedulers.Schedulers;
+import okhttp3.MediaType;
+import okhttp3.MultipartBody;
+import okhttp3.Request;
+import okhttp3.RequestBody;
 
 
 public class MainActivity extends AppCompatActivity implements AdapterM.DoOnClick, NavigationView.OnNavigationItemSelectedListener {
@@ -70,7 +87,9 @@ public class MainActivity extends AppCompatActivity implements AdapterM.DoOnClic
     AdapterM adapter;
     String filename;
     MediaRecorder mediaRecorder;
-    List<DataModel> models;
+    List<DataX> models;
+    int state = 0;
+    Disposable disposable;
 
 
     @Override
@@ -88,13 +107,13 @@ public class MainActivity extends AppCompatActivity implements AdapterM.DoOnClic
             @Override
             public boolean onQueryTextChange(String newText) {
                 newText = newText.toLowerCase();
-                List<DataModel> dm = new ArrayList<>();
+                List<DataX> dm = new ArrayList<>();
 
                 // TODO Sort
                 //       Sort.Companion.sort();
 
-                for (DataModel dataModel : App.dm.getDataModels()) {
-                    String name = dataModel.getModel().toLowerCase();
+                for (DataX dataModel : App.dm.getmGetAutoFrom().getData()) {
+                    String name = dataModel.getName().toLowerCase();
                     if (name.contains(newText)) {
                         dm.add(dataModel);
                     }
@@ -133,13 +152,13 @@ public class MainActivity extends AppCompatActivity implements AdapterM.DoOnClic
         return true;
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         ButterKnife.bind(this);
         setSupportActionBar(toolbar);
-        models = App.dm.getDataModels();
 
 
         ActionBarDrawerToggle toggle = new ActionBarDrawerToggle(
@@ -147,13 +166,6 @@ public class MainActivity extends AppCompatActivity implements AdapterM.DoOnClic
         drawer.addDrawerListener(toggle);
         toggle.syncState();
         nav_view.setNavigationItemSelectedListener(this);
-
-        recyc.setLayoutManager(new LinearLayoutManager(this));
-        adapter = new AdapterM();
-        adapter.setDas(App.dm.getDataModels());
-        adapter.setDoOnClick(this);
-        recyc.setAdapter(adapter);
-
 
         ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.RECORD_AUDIO}, 1);
 
@@ -178,12 +190,39 @@ public class MainActivity extends AppCompatActivity implements AdapterM.DoOnClic
                             mediaRecorder.prepare();
                             mediaRecorder.start();
 
+
+                            disposable = Observable.interval(1, TimeUnit.SECONDS)
+                                    .subscribeOn(Schedulers.io())
+                                    .observeOn(AndroidSchedulers.mainThread())
+                                    .doOnDispose(()->{
+                                        zapis.setBackgroundColor(Color.GRAY);
+                                    })
+                                    .subscribe(
+                                            o->{
+                                                if (state==0) {
+                                                    zapis.setBackgroundColor(Color.RED);
+                                                    state=1;
+                                                }
+                                                else {
+                                                    zapis.setBackgroundColor(Color.GREEN);
+                                                    state=0;
+                                                }
+                                            },n -> { Log.e("errrrrrror",n.toString()); }
+
+                                    );
+
+
+
+
+
                         } catch (IOException e) {
                             e.printStackTrace();
                         }
                         break;
                     }
                     case MotionEvent.ACTION_UP: {
+                        disposable.dispose();
+
                         if (mediaRecorder != null) {
                             mediaRecorder.stop();
                             Toast.makeText(getBaseContext(), "Запись успешна", Toast.LENGTH_SHORT).show();
@@ -196,6 +235,33 @@ public class MainActivity extends AppCompatActivity implements AdapterM.DoOnClic
 
             }
         });
+
+
+        App.apiHelper.getUserToken("admin", "admin")
+                .subscribeOn(Schedulers.io())
+                .flatMap(s -> App.apiHelper.getAutoForUser(s.getData().getHash()))
+
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(o -> {
+                    App.dm.setCarInfoForUser(o);
+                    Toast.makeText(getBaseContext(), o.getData().get(0).getName(), Toast.LENGTH_SHORT).show();
+
+
+                    recyc.setLayoutManager(new LinearLayoutManager(this));
+                    adapter = new AdapterM();
+                    adapter.setDas(App.dm.getmGetAutoFrom().getData());
+                    adapter.setDoOnClick(this);
+                    recyc.setAdapter(adapter);
+
+                    models = App.dm.getmGetAutoFrom().getData();
+                }, t -> {
+                    if (t instanceof UnknownHostException) {
+                        Toast.makeText(getBaseContext(), "Отсутсвует интернет", Toast.LENGTH_SHORT).show();
+                    }
+                    Log.e("ERROR", t.toString());
+                });
+
+
     }
 
 
@@ -237,7 +303,7 @@ public class MainActivity extends AppCompatActivity implements AdapterM.DoOnClic
 
     private void doPhoto() {
         Intent mCameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-        startActivityForResult(mCameraIntent,4);
+        startActivityForResult(mCameraIntent, 4);
     }
 
     private void savePhoto() {
@@ -261,6 +327,19 @@ public class MainActivity extends AppCompatActivity implements AdapterM.DoOnClic
         } catch (IOException e) {
             e.printStackTrace();
         }
+
+        File file = new File(filename);
+        RequestBody imagePart = RequestBody.create(MediaType.parse("image/*"), file);
+        //.createFormData("profileImage", file.getName(), RequestBody.create(MediaType.parse("image/*"), file));
+
+        App.apiHelper.addPhoto(7, "9048fb696c5f9045a78a5054888e05d5fbc4ad1e861c1bbafa0eb9daaa1e7c7e", imagePart)
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(o -> {
+
+                }, t -> {
+                    Log.e("Добавление фото", t.toString());
+                });
     }
 
     private void loadPhoto() {
@@ -287,18 +366,20 @@ public class MainActivity extends AppCompatActivity implements AdapterM.DoOnClic
          *
          */
         super.onActivityResult(requestCode, resultCode, data);
+
+
         if (requestCode == 1 && resultCode == RESULT_OK && data != null) {
             Uri mUri = data.getData();
+            Bitmap mBit = null;
             try {
-                Bitmap mBit = MediaStore.Images.Media.getBitmap(getContentResolver(), mUri);
+                mBit = MediaStore.Images.Media.getBitmap(getContentResolver(), mUri);
                 mImg.setImageBitmap(mBit);
             } catch (IOException e) {
                 e.printStackTrace();
             }
         }
 
-        if (requestCode == 4 && resultCode == RESULT_OK)
-        {
+        if (requestCode == 4 && resultCode == RESULT_OK) {
             Bitmap mThumbBit = (Bitmap) data.getExtras().get("data");
             mImg.setImageBitmap(mThumbBit);
         }
@@ -313,24 +394,22 @@ public class MainActivity extends AppCompatActivity implements AdapterM.DoOnClic
          * author: Danil` Shakirov
          *
          */
-        ArrayList<DataModel> dm = new ArrayList<>();
+        ArrayList<DataX> dm = new ArrayList<>();
         dm.addAll(models);
         models = Sort.Companion.sort(dm);
         adapter.setDas(models);
     }
 
 
-
-
     @OnClick(R.id.button_obr)
     void doSortObr() {
-        adapter.setDas(App.dm.getDataModels());
+        adapter.setDas(App.dm.getmGetAutoFrom().getData());
     }
 
 
     @Override
-    public void doClick(DataModel das, int pos) {
-        Toast.makeText(getBaseContext(), das.getModel(), Toast.LENGTH_SHORT).show();
+    public void doClick(DataX das, int pos) {
+        Toast.makeText(getBaseContext(), das.getName(), Toast.LENGTH_SHORT).show();
     }
 
     @Override
@@ -339,7 +418,24 @@ public class MainActivity extends AppCompatActivity implements AdapterM.DoOnClic
 
         if (id == R.id.nav_home) {
             // Handle the camera action
+            App.apiHelper.addAuto("9048fb696c5f9045a78a5054888e05d5fbc4ad1e861c1bbafa0eb9daaa1e7c7e", "31231312312321312", "Lada")
+                    .subscribeOn(Schedulers.io())
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(o -> {
+                        Toast.makeText(getBaseContext(), "Машина добавлена", Toast.LENGTH_SHORT).show();
+                        //  adapter.setDas(o);
+                    }, t -> {
+                    });
+
+
         } else if (id == R.id.nav_gallery) {
+
+            // MediaPlayer mediaPlayer= MediaPlayer.create(getBaseContext(),Uri.parse(filename));
+
+            Uri uri = Uri.parse("http://q-arp.net:3030/" + App.dm.getmGetAutoFrom().getData().get(3).getPhotos().get(0).getUrl()) ;
+            MediaPlayer mediaPlayer = MediaPlayer.create(getBaseContext(), uri);
+            mediaPlayer.start();
+
 
         } else if (id == R.id.nav_slideshow) {
 

@@ -1,13 +1,21 @@
 package com.example.wsapp1;
 
 import com.example.wsapp1.model.DataModel;
+import com.example.wsapp1.model.DataX;
+import com.example.wsapp1.model.GetAutoFromUser;
+import com.example.wsapp1.model.GetToken;
 
 import java.util.ArrayList;
 import java.util.List;
 
+import okhttp3.ResponseBody;
+
 public class DataManager {
 
     private List<DataModel> dataModels;
+    private GetToken mGetToken;
+    private GetAutoFromUser mGetAutoFrom;
+    private List<DataX> mListAuto;
 
     public DataManager() {
         setDataModels();
@@ -29,4 +37,24 @@ public class DataManager {
     }
 
 
+    public void setUserInfo(GetToken o) {
+        mGetToken = o;
+    }
+
+    public GetToken getmGetToken() {
+        return mGetToken;
+    }
+
+    public void setCarInfoForUser(GetAutoFromUser o) {
+
+        mGetAutoFrom = o;
+    }
+
+    public List<DataX> getmListAuto() {
+        return mListAuto;
+    }
+
+    public GetAutoFromUser getmGetAutoFrom() {
+        return mGetAutoFrom;
+    }
 }
